@@ -1,6 +1,0 @@
-copy "C:\Program Files\Tivoli\TSM\FastBack\server\FastBackServer.exe" .
-rp-win-x86.exe -f FastBackServer.exe -r 5 > rop.txt
-
-ej:
-
-: pop ebp ; ret
