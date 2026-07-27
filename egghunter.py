@@ -147,7 +147,12 @@ def main():
     ap.add_argument("-v", "--variant", choices=["old", "seh"], default="old")
     ap.add_argument("-s", "--syscall", type=parse_syscall_id, default=0x2, help="Syscall ID hex string (e.g. 0x1C9)")
     ap.add_argument("-n", "--negate", action="store_true", help="Use NEG to avoid null bytes")
-    ap.add_argument("-b", "--badchars", default="", help=r'Badchars: "\x00\x0a"')
+    ap.add_argument(
+        "-b",
+        "--badchars",
+        default="",
+        help=r'Badchars string (default: empty; example: "\x00\x0a")',
+    )
     ap.add_argument("-f", "--format", choices=["python", "c", "hex"], default="python")
     ap.add_argument("-o", "--outfile", help="Save to file")
     args = ap.parse_args()
