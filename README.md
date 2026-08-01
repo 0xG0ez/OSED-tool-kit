@@ -11,8 +11,8 @@ An interactive assembly environment powered by the **Keystone** and **Capstone**
 * **Live Disassembly**: Instantly analyzes hex strings to identify which specific bytes trigger bad character alerts.
 
 ### 2. Shellcoder Engine (`shellcoder-v2.py`)
-The primary compilation engine for complex Windows payloads. 
-* **Credits**: This tool is based on the original work and design by **epi** and **Kavanyy**, specifically adapted and expanded for OSED-level research and Windows x86 exploitation.
+The primary compilation engine for complex Windows payloads.
+* **Credits**: This tool is based on the original work and design by **epi**. **Kavanyy** specifically adapted and expanded for OSED-level research and Windows x86 exploitation. **0xG0ez** refactored and added the bind shellcode and the helper classes listed below.
 * **ShellcodeHelper Abstraction**: Payload builders now share a dedicated helper class in [`shellcode/shellcode_helper.py`](shellcode/shellcode_helper.py) that handles stack-slot allocation, writable structure buffers, function-hash resolution, DLL loading, and common resolver bootstrap assembly.
 * **Cleaner Payload Modules**: Reverse shell, bind shell, MSI stager, and message box payloads live as separate modules under [`shellcode/`](shellcode/) instead of being inlined into one large file.
 * **Safer Stack Layouts**: Centralized buffer reservation and offset validation reduce mistakes when writing `STARTUPINFOA`, `sockaddr_in`, and other stack-backed structures.
