@@ -18,7 +18,7 @@ from keystone import Ks, KS_ARCH_X86, KS_MODE_32
 # utils
 def format_shellcode(buf: bytes, fmt: str = "python") -> str:
     if fmt == "python":
-        return 'b"' + ''.join(f"\\x{b:02x}" for b in buf) + '"'
+        return format_python_egghunter(buf)
     if fmt == "c":
         return "unsigned char egghunter[] = { " + ','.join(f"0x{b:02x}" for b in buf) + " };"
     if fmt == "hex":
@@ -26,10 +26,31 @@ def format_shellcode(buf: bytes, fmt: str = "python") -> str:
     raise ValueError("Format not supported")
 
 
+def format_python_egghunter(buf: bytes) -> str:
+    lines = ['egghunter = b""']
+    for idx in range(0, len(buf), 12):
+        block = buf[idx:idx + 12]
+        block_hex = ''.join(f"\\x{b:02x}" for b in block)
+        lines.append(f'egghunter += b"{block_hex}"')
+    return "\n".join(lines)
+
+
 def parse_badchars_string(s: str) -> bytes:
     s = s.replace(' ', '').lower()
-    parts = s.split('\\x')[1:] if '\\x' in s else []
-    return bytes(int(p, 16) for p in parts if len(p) == 2)
+    if not s:
+        return b''
+
+    if len(s) % 4 != 0 or not all(s[i:i + 2] == '\\x' for i in range(0, len(s), 4)):
+        raise ValueError
+
+    return bytes(int(s[i + 2:i + 4], 16) for i in range(0, len(s), 4))
+
+
+def parse_syscall_id(s: str) -> int:
+    try:
+        return int(s, 0)
+    except ValueError:
+        raise argparse.ArgumentTypeError('Syscall ID must be hex like 0x1C9')
 
 
 def check_badchars(buf: bytes, bad: bytes):
@@ -124,9 +145,14 @@ def main():
     ap = argparse.ArgumentParser(description="Egghunter generator for Windows x86")
     ap.add_argument("-t", "--tag", required=True, help="TAG (ej: w00t)")
     ap.add_argument("-v", "--variant", choices=["old", "seh"], default="old")
-    ap.add_argument("-s", "--syscall", type=lambda x: int(x, 0), default=0x2, help="Syscall ID")
+    ap.add_argument("-s", "--syscall", type=parse_syscall_id, default=0x2, help="Syscall ID hex string (e.g. 0x1C9)")
     ap.add_argument("-n", "--negate", action="store_true", help="Use NEG to avoid null bytes")
-    ap.add_argument("-b", "--badchars", default="", help=r'Badchars: "\x00\x0a"')
+    ap.add_argument(
+        "-b",
+        "--badchars",
+        default="",
+        help=r'Badchars string (default: empty; example: "\x00\x0a")',
+    )
     ap.add_argument("-f", "--format", choices=["python", "c", "hex"], default="python")
     ap.add_argument("-o", "--outfile", help="Save to file")
     args = ap.parse_args()
@@ -134,30 +160,42 @@ def main():
     if len(args.tag) != 4 or not args.tag.isascii():
         sys.exit("ERROR: TAG must be 4 chars wide ASCII.")
 
-    bad = parse_badchars_string(args.badchars)
+    try:
+        bad = parse_badchars_string(args.badchars)
+    except ValueError:
+        sys.exit(r'ERROR: Badchars must use string format, e.g. -b "\x00\x0a\xff"')
 
     if args.variant == "old":
         sc = build_old(args.tag, args.syscall, args.negate)
     else:
         sc = build_seh(args.tag)
 
-    # output
     out = format_shellcode(sc, args.format)
-    print(out)
-    print(f"Shellcode length: {len(sc)} bytes")
-
     bad_list = check_badchars(sc, bad)
+
+    hunter_type = "syscall" if args.variant == "old" else "seh"
+    print(f"\n[+] Egghunter created successfully!")
+    print(f"[=]   Type:          {hunter_type}")
+    print(f"[=]   TAG:           {args.tag}")
+    if args.variant == "old":
+        print(f"[=]   Syscall ID:    0x{args.syscall:X}")
+        print(f"[=]   NEG syscall:   {'yes' if args.negate else 'no'}")
+        print(f"[!]   check syscall in cdb.exe with: u ntdll!NtAccessCheckAndAuditAlarm")
+    print(f"[=]   Total len:     {len(sc)} bytes (0x{len(sc):x})")
+
     if bad_list:
-        print("\nBadchars detected:")
+        print(f"\n[!] Badchars detected:")
         for off, b in bad_list:
-            print(f"  · Offset {off:02}: \\x{b:02x}")
+            print(f"  Offset {off:02}: \\x{b:02x}")
     else:
-        print("No badchars detected.")
+        print("[=]   Badchars:      clean")
+
+    print("\n" + out + "\n")
 
     if args.outfile:
         with open(args.outfile, "w") as f:
             f.write(out)
-        print(f"Saved in {args.outfile}")
+        print(f"[+] Saved to {args.outfile}")
 
 
 if __name__ == "__main__":

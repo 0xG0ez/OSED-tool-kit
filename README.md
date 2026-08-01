@@ -11,11 +11,15 @@ An interactive assembly environment powered by the **Keystone** and **Capstone**
 * **Live Disassembly**: Instantly analyzes hex strings to identify which specific bytes trigger bad character alerts.
 
 ### 2. Shellcoder Engine (`shellcoder-v2.py`)
-The primary compilation engine for complex Windows payloads. 
-* **Credits**: This tool is based on the original work and design by **epi**, specifically adapted and expanded for OSED-level research and Windows x86 exploitation.
+The primary compilation engine for complex Windows payloads.
+* **Credits**: This tool is based on the original work and design by **epi**. **Kavanyy** specifically adapted and expanded for OSED-level research and Windows x86 exploitation. **0xG0ez** refactored and added the bind shellcode and the helper classes listed below.
+* **ShellcodeHelper Abstraction**: Payload builders now share a dedicated helper class in [`shellcode/shellcode_helper.py`](shellcode/shellcode_helper.py) that handles stack-slot allocation, writable structure buffers, function-hash resolution, DLL loading, and common resolver bootstrap assembly.
+* **Cleaner Payload Modules**: Reverse shell, bind shell, MSI stager, and message box payloads live as separate modules under [`shellcode/`](shellcode/) instead of being inlined into one large file.
+* **Safer Stack Layouts**: Centralized buffer reservation and offset validation reduce mistakes when writing `STARTUPINFOA`, `sockaddr_in`, and other stack-backed structures.
+* **Consistent String Handling**: Shared helpers build null-terminated strings and writable command buffers without ad hoc padding or duplicate string-push logic.
 * **Automated XOR Encoder**: Iteratively searches for a clean 4-byte XOR key to bypass filters when static payloads contain bad characters, automatically prepending the necessary decoder stub.
 * **WinAPI Hashing**: Utilizes ror-13 hashing for function resolution (e.g., LoadLibraryA, CreateProcessA, WSAStartup) to keep payloads compact and robust against different Windows versions.
-* **Modular Templates**: Pre-built logic for Reverse Shells (Standard), MSI Exec stagers, other payloads are not supported and are left for the user to code.
+* **Modular Templates**: Pre-built logic for reverse shells, bind shells, MSI exec stagers, and message box payloads. Writing custom shellcode is much easier because the shared helper handles the resolver/bootstrap boilerplate and keeps function pointers, buffers, and stack-backed variables organized so you do not have to manually track where everything lives.
 
 ### 3. Egghunter Generator (`egghunter.py`)
 A modular tool to generate optimized egghunter payloads for Windows x86.
@@ -41,4 +45,11 @@ Automates the creation of byte arrays for bad character discovery.
 These tools require Python 3 and several specialized libraries. Install the dependencies using pip:
 
 ```bash
-pip install keystone-engine capstone colorama numpy
+pip install keystone-engine colorama
+```
+
+Capstone is optional for `shellcoder-v2.py`. Install it to get instruction-level bad-character analysis instead of raw byte-offset reporting:
+
+```bash
+pip install capstone
+```
