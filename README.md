@@ -22,6 +22,37 @@ The primary compilation engine for complex Windows payloads.
 * **WinAPI Hashing**: Utilizes ror-13 hashing for function resolution (e.g., LoadLibraryA, CreateProcessA, WSAStartup) to keep payloads compact and robust against different Windows versions.
 * **Modular Templates**: Pre-built logic for reverse shells, bind shells, MSI exec stagers, and message box payloads. Writing custom shellcode is much easier because the shared helper handles the resolver/bootstrap boilerplate and keeps function pointers, buffers, and stack-backed variables organized so you do not have to manually track where everything lives.
 
+#### Bring your own shellcode
+
+Use `--custom PATH` to load your own payload builder while keeping the toolkit's
+assembly, bad-byte checking, XOR encoding, output, and file-storage features:
+
+```python
+# my_shellcode.py
+from shellcode.payload_utils import flatten_asm, format_shellcode_asm
+from shellcode.shellcode_helper import ShellcodeHelper
+
+
+def shellcode(lhost, lport, breakpoint=0, bad_bytes=None):
+    helper = ShellcodeHelper(bad_ints=bad_bytes)
+    # Build and return an assembly string, just like the built-in payloads.
+    asm = ["start:", f"{['', 'int3;'][breakpoint]}"]
+    return format_shellcode_asm("\n".join(flatten_asm(asm)))
+```
+
+Run it with `python3 shellcoder-v2.py --custom my_shellcode.py`. A working bind
+shell example is provided at
+[`shellcode/byo_custom_shell.py`](shellcode/byo_custom_shell.py):
+
+```bash
+python3 shellcoder-v2.py --custom shellcode/byo_custom_shell.py -p 4444
+```
+
+The required
+`shellcode` function receives `(lhost, lport, breakpoint, bad_bytes)` and must
+return assembly text. `lhost` and `lport` are passed as strings; `bad_bytes` is
+a list of integer byte values.
+
 #### Shellcode helper API
 
 The shared helpers in [`shellcode/push_string.py`](shellcode/push_string.py)
