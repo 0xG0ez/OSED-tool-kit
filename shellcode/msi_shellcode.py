@@ -4,8 +4,8 @@ from shellcode.payload_utils import flatten_asm, format_shellcode_asm
 from shellcode.shellcode_helper import ShellcodeHelper
 
 
-def msi_shellcode(rev_ip_addr, rev_port, breakpoint=0):
-    var = ShellcodeHelper()
+def msi_shellcode(rev_ip_addr, rev_port, breakpoint=0, bad_bytes=None):
+    var = ShellcodeHelper(bad_bytes=bad_bytes)
 
     if rev_port == "80":
         rev_port = ""

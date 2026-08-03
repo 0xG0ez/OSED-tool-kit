@@ -22,6 +22,20 @@ The primary compilation engine for complex Windows payloads.
 * **WinAPI Hashing**: Utilizes ror-13 hashing for function resolution (e.g., LoadLibraryA, CreateProcessA, WSAStartup) to keep payloads compact and robust against different Windows versions.
 * **Modular Templates**: Pre-built logic for reverse shells, bind shells, MSI exec stagers, and message box payloads. Writing custom shellcode is much easier because the shared helper handles the resolver/bootstrap boilerplate and keeps function pointers, buffers, and stack-backed variables organized so you do not have to manually track where everything lives.
 
+#### Shellcode helper API
+
+The shared helpers in [`shellcode/push_string.py`](shellcode/push_string.py)
+provide these building blocks:
+
+* `push_string(input_string, clean_reg="eax", target_reg=None, init_null=True, bad_bytes=None)` emits x86 instructions for a null-terminated stack string.
+* `push_dword(chunk, clean_reg, bad_bytes)` accepts either little-endian `bytes` or an unsigned 32-bit integer. It emits a direct push when possible and otherwise uses a bad-byte-free encoding.
+* `NegativeAdd(target, bad_bytes=None, max_count=16)` finds addends that construct a dword without forbidden immediate bytes. Use `.instructions(register)` for an instruction list or `.asm(register)` for newline-separated assembly.
+
+`ShellcodeHelper.push_function_hash(name, clean_reg="eax")` and
+`ShellcodeHelper.find_function(name, clean_reg="eax")` support selecting the
+register used for hash encoding. Omitting `clean_reg` preserves the default
+`eax` behavior.
+
 ### 3. Egghunter Generator (`egghunter.py`)
 A modular tool to generate optimized egghunter payloads for Windows x86.
 * Supports both **Classic Syscall (0x2e)** for Windows XP/7/10 and **SEH-based** variants for bypass scenarios.

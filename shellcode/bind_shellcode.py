@@ -8,14 +8,14 @@ from shellcode.payload_utils import (
 from shellcode.shellcode_helper import ShellcodeHelper
 
 
-def bind_shellcode(bind_port, breakpoint=0):
+def bind_shellcode(bind_port, breakpoint=0, bad_bytes=None):
     # This helper class manages the function pointers and variables needed in shellcode
     # it reserves space on the stack starting at [EBP-0x04] and grows upward to lower addresses
     # meaning the second variable allocated is at [EBP-0x08]
     # The helper class already allocates variables needed in the boilerplate code:
     #  - the function pointer to `find_function`, a variable `common_temp`
     #    and the function pointer to `LoadLibraryA` from kernel32.dll
-    var = ShellcodeHelper()
+    var = ShellcodeHelper(bad_bytes=bad_bytes)
 
     # These are the names of the function calls the shellcode will be calling
     # Start them with `f_` to keep the function calls clear from `v_` variables

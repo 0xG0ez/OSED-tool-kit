@@ -4,8 +4,8 @@ from shellcode.payload_utils import flatten_asm, format_shellcode_asm
 from shellcode.shellcode_helper import ShellcodeHelper
 
 
-def msg_box(header, text, breakpoint=0):
-    var = ShellcodeHelper()
+def msg_box(header, text, breakpoint=0, bad_bytes=None):
+    var = ShellcodeHelper(bad_bytes=bad_bytes)
 
     f_term_process = "TerminateProcess"
     f_msgbox = "MessageBoxA"
