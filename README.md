@@ -15,11 +15,57 @@ The primary compilation engine for complex Windows payloads.
 * **Credits**: This tool is based on the original work and design by **epi**. **Kavanyy** specifically adapted and expanded for OSED-level research and Windows x86 exploitation. **0xG0ez** refactored and added the bind shellcode and the helper classes listed below.
 * **ShellcodeHelper Abstraction**: Payload builders now share a dedicated helper class in [`shellcode/shellcode_helper.py`](shellcode/shellcode_helper.py) that handles stack-slot allocation, writable structure buffers, function-hash resolution, DLL loading, and common resolver bootstrap assembly.
 * **Cleaner Payload Modules**: Reverse shell, bind shell, MSI stager, and message box payloads live as separate modules under [`shellcode/`](shellcode/) instead of being inlined into one large file.
+* **Educational Bind Shell**: [`shellcode/bind_shellcode.py`](shellcode/bind_shellcode.py) includes explanatory comments for the resolver, socket setup, and API-call sequence so the generated payload is easier to study and adapt.
 * **Safer Stack Layouts**: Centralized buffer reservation and offset validation reduce mistakes when writing `STARTUPINFOA`, `sockaddr_in`, and other stack-backed structures.
 * **Consistent String Handling**: Shared helpers build null-terminated strings and writable command buffers without ad hoc padding or duplicate string-push logic.
 * **Automated XOR Encoder**: Iteratively searches for a clean 4-byte XOR key to bypass filters when static payloads contain bad characters, automatically prepending the necessary decoder stub.
 * **WinAPI Hashing**: Utilizes ror-13 hashing for function resolution (e.g., LoadLibraryA, CreateProcessA, WSAStartup) to keep payloads compact and robust against different Windows versions.
 * **Modular Templates**: Pre-built logic for reverse shells, bind shells, MSI exec stagers, and message box payloads. Writing custom shellcode is much easier because the shared helper handles the resolver/bootstrap boilerplate and keeps function pointers, buffers, and stack-backed variables organized so you do not have to manually track where everything lives.
+
+#### Bring your own shellcode
+
+Use `--custom PATH` to load your own payload builder while keeping the toolkit's
+assembly, bad-byte checking, XOR encoding, output, and file-storage features:
+
+```python
+# my_shellcode.py
+from shellcode.payload_utils import flatten_asm, format_shellcode_asm
+from shellcode.shellcode_helper import ShellcodeHelper
+
+
+def shellcode(lhost, lport, breakpoint=0, bad_bytes=None):
+    helper = ShellcodeHelper(bad_ints=bad_bytes)
+    # Build and return an assembly string, just like the built-in payloads.
+    asm = ["start:", f"{['', 'int3;'][breakpoint]}"]
+    return format_shellcode_asm("\n".join(flatten_asm(asm)))
+```
+
+Run it with `python3 shellcoder-v2.py --custom my_shellcode.py`. A working bind
+shell example is provided at
+[`shellcode/byo_custom_shell.py`](shellcode/byo_custom_shell.py):
+
+```bash
+python3 shellcoder-v2.py --custom shellcode/byo_custom_shell.py -p 4444
+```
+
+The required
+`shellcode` function receives `(lhost, lport, breakpoint, bad_bytes)` and must
+return assembly text. `lhost` and `lport` are passed as strings; `bad_bytes` is
+a list of integer byte values.
+
+#### Shellcode helper API
+
+The shared helpers in [`shellcode/push_string.py`](shellcode/push_string.py)
+provide these building blocks:
+
+* `push_string(input_string, clean_reg="eax", target_reg=None, init_null=True, bad_bytes=None)` emits x86 instructions for a null-terminated stack string.
+* `push_dword(chunk, clean_reg, bad_bytes)` accepts either little-endian `bytes` or an unsigned 32-bit integer. It emits a direct push when possible and otherwise uses a bad-byte-free encoding.
+* `NegativeAdd(target, bad_bytes=None, max_count=16)` finds addends that construct a dword without forbidden immediate bytes. Use `.instructions(register)` for an instruction list or `.asm(register)` for newline-separated assembly.
+
+`ShellcodeHelper.push_function_hash(name, clean_reg="eax")` and
+`ShellcodeHelper.find_function(name, clean_reg="eax")` support selecting the
+register used for hash encoding. Omitting `clean_reg` preserves the default
+`eax` behavior.
 
 ### 3. Egghunter Generator (`egghunter.py`)
 A modular tool to generate optimized egghunter payloads for Windows x86.
