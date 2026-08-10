@@ -209,6 +209,36 @@ class ShellcodeHelperTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ShellcodeHelper(base_register="ebp]")
 
+    def test_selects_hash_rotation_that_avoids_bad_bytes(self):
+        cases = (
+            (set(), "ror edx, 0xd;", 0xB3C091A2),
+            ({0x0D}, "rol edx, 0x13;", 0xB3C091A2),
+            ({0x0D, 0x13}, "ror edx, 0xb;", 0xCF02468A),
+            ({0x0D, 0x13, 0x0B}, "rol edx, 0x15;", 0xCF02468A),
+        )
+
+        for bad_bytes, expected_instruction, expected_rotation in cases:
+            with self.subTest(bad_bytes=bad_bytes):
+                variables = ShellcodeHelper(bad_bytes=bad_bytes)
+
+                self.assertEqual(
+                    variables._rotate_str(0x12345678),
+                    expected_rotation,
+                )
+                self.assertIn(expected_instruction, variables.get_common_shellcode())
+
+    def test_hash_push_uses_selected_rotation(self):
+        self.assertEqual(
+            ShellcodeHelper().push_function_hash("ExitProcess"),
+            ["push 0x73e2d87e;"],
+        )
+        self.assertEqual(
+            ShellcodeHelper(bad_bytes={0x0D, 0x13}).push_function_hash(
+                "ExitProcess"
+            ),
+            ["push 0x9a06e1c7;"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
