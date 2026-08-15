@@ -150,6 +150,11 @@ def abort_on_bad_chars(data, bad_chars, warning, abort_message):
     sys.exit(1)
 
 
+def contains_bad_bytes(data, bad_bytes):
+    """Return whether *data* contains any configured bad byte."""
+    return any(byte in bad_bytes for byte in data)
+
+
 def load_custom_shellcode(path):
     """Load a user payload module and return its standard builder function."""
     spec = importlib.util.spec_from_file_location("custom_shellcode", path)
@@ -413,12 +418,17 @@ def main(args):
         print(f"{Fore.RED}[!] Error compiling shellcode: {e}{Style.RESET_ALL}")
         sys.exit(1)
 
-    if args.key:
+    encoded = False
+    decoder = bytearray()
+    encoded_shellcode = bytearray()
+
+    if args.key and contains_bad_bytes(encoding, bad_bytes):
         initial_key = parse_key_arg(args.key)
         solved_key, decoder, encoded_shellcode = build_encoded_shellcode(
             encoding, bad_bytes, initial_key, eng
         )
         final_shellcode = decoder + encoded_shellcode
+        encoded = True
         print_encoding_success(solved_key)
         final_hex = "\n\n".join(
             [
@@ -429,6 +439,11 @@ def main(args):
         )
     else:
         final_shellcode = encoding
+        if args.key:
+            print(
+                "[+] Shellcode contains no configured bad bytes; "
+                "skipping XOR encoding."
+            )
         abort_on_bad_chars(
             final_shellcode,
             bad_bytes,
@@ -439,7 +454,7 @@ def main(args):
 
     print(f"\n[+] {Fore.GREEN}Shellcode created successfully!{Style.RESET_ALL}")
     print(f"[=]   Payload len:   {len(encoding)} bytes (0x{len(encoding):x})")
-    if args.key:
+    if encoded:
         print(f"[=]   Decoder len:   {len(decoder)} bytes (0x{len(decoder):x})")
         print(
             f"[=]   Encoded len:   {len(encoded_shellcode)} bytes "

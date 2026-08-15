@@ -109,7 +109,7 @@ def _format_dword(chunk: bytes) -> str:
 
 def _neg_push(value: int, clean_reg: str, bad_bytes: set[int]) -> list[str] | None:
     """Encode a dword via two's-complement negation when direct bytes are bad."""
-    negated = (-value) & 0xFFFFFFFF
+    negated = (-value) & MASK
     if _contains_bad_bytes(negated, 4, bad_bytes):
         return None
 
@@ -160,7 +160,7 @@ def push_dword(chunk: bytes | int, clean_reg: str, bad_bytes: set[int]) -> list[
     """
     if isinstance(chunk, int):
         if not 0 <= chunk <= MASK:
-            raise ValueError("dword integer must be between 0 and 0xffffffff")
+            raise ValueError(f"dword integer must be between 0 and {hex(MASK)}")
         value = chunk
     elif not isinstance(chunk, bytes):
         raise TypeError("chunk must be bytes or an integer")
