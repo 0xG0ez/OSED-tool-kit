@@ -24,8 +24,8 @@ class PushStringTests(unittest.TestCase):
             push_string("AAAA", bad_bytes={0x00, 0x41, 0xBE, 0xBF}),
             "\n".join(
                 [
-                    "xor eax, eax                    ;",
-                    "push eax                        ;",
+                    "xor eax, eax;",
+                    "push eax;",
                     "xor eax, eax;",
                     "add eax, 0x80010101;",
                     "add eax, 0xc1404040;",

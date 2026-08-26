@@ -224,7 +224,7 @@ class ShellcodeHelper:
         "       dec ecx                         ;", # Decrement our names counter
         self.read_var(self._common_temp_var)      , # Restore AddressOfNames VMA
         "       mov esi, [eax+ecx*4]            ;", # Get the RVA of the symbol name
-        "       add esi, ebx                    ;", # Set ESI to the VMA of the current
+        "       add esi, ebx                    ;", # Set ESI to the VMA of the current symbol name
         "   compute_hash:                        ", #
         "       xor eax, eax                    ;", # NULL EAX
         "       cdq                             ;", # NULL EDX

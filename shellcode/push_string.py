@@ -1,4 +1,127 @@
+import argparse
+import re
+
+
 MASK = 0xFFFFFFFF
+DEFAULT_BAD_BYTES = {0x00}
+VALID_REGISTERS = {"eax", "ebx", "ecx", "edx"}
+
+
+def parse_badchars_string(value: str) -> set[int]:
+    """Parse a CLI bad-character value in ``\\xNN`` notation."""
+    if not re.fullmatch(r"(?:\\x[0-9a-fA-F]{2})*", value):
+        raise ValueError(r'bad characters must use \xNN notation (for example "\x00\x0a")')
+    return {int(value[index + 2 : index + 4], 16) for index in range(0, len(value), 4)}
+
+
+def _badchars_argument(value: str) -> set[int]:
+    try:
+        return parse_badchars_string(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def _dword_argument(value: str) -> int:
+    try:
+        result = int(value, 0)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("dword must be a decimal or 0x-prefixed hexadecimal integer") from error
+    if not 0 <= result <= MASK:
+        raise argparse.ArgumentTypeError(f"dword must be between 0 and 0x{MASK:08x}")
+    return result
+
+
+def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "-r",
+        "--register",
+        choices=sorted(VALID_REGISTERS),
+        default="eax",
+        help="working register (default: eax)",
+    )
+
+
+def cli_push_string(argv: list[str] | None = None) -> int:
+    """Run the command-line interface for :func:`push_string`."""
+    parser = argparse.ArgumentParser(description="Generate x86 stack pushes for a string.")
+    parser.add_argument("input_string", help="Latin-1 string to push")
+    _add_common_arguments(parser)
+    parser.add_argument(
+        "-b",
+        "--badchars",
+        type=_badchars_argument,
+        default="\\x00",
+        metavar=r"\xNN...",
+        help=r'forbidden bytes (default: \x00; example: "\x00\x0a")',
+    )
+    parser.add_argument(
+        "-t",
+        "--target-register",
+        choices=sorted(VALID_REGISTERS),
+        help="register that receives a pointer to the pushed string",
+    )
+    parser.add_argument(
+        "--no-null",
+        action="store_true",
+        help="do not prepend a null dword for four-byte-aligned strings",
+    )
+    args = parser.parse_args(argv)
+    try:
+        print(
+            push_string(
+                args.input_string,
+                clean_reg=args.register,
+                target_reg=args.target_register,
+                init_null=not args.no_null,
+                bad_bytes=args.badchars,
+            )
+        )
+    except (TypeError, UnicodeEncodeError, ValueError) as error:
+        parser.error(str(error))
+    return 0
+
+
+def cli_push_dword(argv: list[str] | None = None) -> int:
+    """Run the command-line interface for :func:`push_dword`."""
+    parser = argparse.ArgumentParser(description="Generate x86 stack pushes for a dword.")
+    parser.add_argument("dword", type=_dword_argument, help="unsigned 32-bit decimal or 0x-prefixed hexadecimal value")
+    _add_common_arguments(parser)
+    parser.add_argument(
+      "-b",
+      "--badchars",
+      type=_badchars_argument,
+      default=None,
+      metavar=r"\xNN...",
+      help=r'forbidden bytes (default: None; example: "\x00\x0a")',
+    )
+    args = parser.parse_args(argv)
+    try:
+        print("\n".join(push_dword(args.dword, args.register, args.badchars)))
+    except (TypeError, ValueError) as error:
+        parser.error(str(error))
+    return 0
+
+
+def cli_negative_add(argv: list[str] | None = None) -> int:
+    """Run the command-line interface for :class:`NegativeAdd`."""
+    parser = argparse.ArgumentParser(description="Generate a bad-byte-free negative-add dword push.")
+    parser.add_argument("dword", type=_dword_argument, help="unsigned 32-bit decimal or 0x-prefixed hexadecimal value")
+    _add_common_arguments(parser)
+    parser.add_argument(
+        "-b",
+        "--badchars",
+        type=_badchars_argument,
+        default=None,
+        metavar=r"\xNN...",
+        help=r'forbidden bytes (default: None; example: "\x00\x0a")',
+    )
+    parser.add_argument("--max-count", type=int, default=16, help="maximum number of addends (default: 16)")
+    args = parser.parse_args(argv)
+    try:
+        print(NegativeAdd(args.dword, args.badchars, args.max_count).asm(args.register))
+    except (TypeError, ValueError) as error:
+        parser.error(str(error))
+    return 0
 
 
 class NegativeAdd:
@@ -20,12 +143,15 @@ class NegativeAdd:
             raise TypeError("target must be an integer")
         if not isinstance(max_count, int) or max_count < 1:
             raise ValueError("max_count must be a positive integer")
+        if bad_bytes is None:
+            raise ValueError("Missing bad bytes. Add them to use this function.")
 
         self.target = target & MASK
-        self.bad_bytes = {0x00} if bad_bytes is None else set(bad_bytes)
+
         if any(not isinstance(byte, int) or not 0 <= byte <= 0xFF
-               for byte in self.bad_bytes):
+              for byte in bad_bytes):
             raise ValueError("bad_bytes must contain byte values")
+        self.bad_bytes = bad_bytes
         self.max_count = max_count
 
     @staticmethod
@@ -152,7 +278,7 @@ def _push_partial_tail(
     return instructions
 
 
-def push_dword(chunk: bytes | int, clean_reg: str, bad_bytes: set[int]) -> list[str]:
+def push_dword(chunk: bytes | int, clean_reg: str, bad_bytes: set[int] | None = None) -> list[str]:
     """Push a dword directly or via negation if the immediate is dirty.
 
     ``chunk`` may be either four bytes in little-endian order or an unsigned
@@ -166,6 +292,9 @@ def push_dword(chunk: bytes | int, clean_reg: str, bad_bytes: set[int]) -> list[
         raise TypeError("chunk must be bytes or an integer")
     else:
         value = int.from_bytes(chunk, "little")
+
+    if bad_bytes is None:
+      return [f"push 0x{value:08x};"]
 
     if not _contains_bad_bytes(value, 4, bad_bytes):
         return [f"push 0x{value:08x};"]
@@ -195,21 +324,21 @@ def push_string(
     a real null terminator instead of filler bytes. When a direct immediate
     contains forbidden bytes, the helper falls back to a negation-based form.
     """
-    bad_bytes = {0x00} if bad_bytes is None else set(bad_bytes)
+    bad_bytes = set(DEFAULT_BAD_BYTES) if bad_bytes is None else set(bad_bytes)
     data = input_string.encode("latin-1")
     if not data:
         raise ValueError("input_string must not be empty")
     if any(byte == 0x00 for byte in data):
         raise ValueError("input_string must not contain embedded null bytes")
-    if clean_reg not in {"eax", "ebx", "ecx", "edx"}:
+    if clean_reg not in VALID_REGISTERS:
         raise ValueError("clean_reg must be eax, ebx, ecx, or edx")
 
     instructions = []
     tail_len = len(data) % 4
     reg_is_zero = False
     if init_null and tail_len == 0:
-        instructions.append(f"xor {clean_reg}, {clean_reg}                    ;")
-        instructions.append(f"push {clean_reg}                        ;")
+        instructions.append(f"xor {clean_reg}, {clean_reg};")
+        instructions.append(f"push {clean_reg};")
         reg_is_zero = True
 
     if tail_len:
@@ -227,7 +356,7 @@ def push_string(
         )
 
     if target_reg:
-        instructions.append("push esp                        ;")
-        instructions.append(f"pop {target_reg}                         ;")
+        instructions.append("push esp;")
+        instructions.append(f"pop {target_reg};")
 
     return "\n".join(instructions)
