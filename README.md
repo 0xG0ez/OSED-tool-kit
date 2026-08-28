@@ -58,9 +58,25 @@ a list of integer byte values.
 The shared helpers in [`shellcode/push_string.py`](shellcode/push_string.py)
 provide these building blocks:
 
-* `push_string(input_string, clean_reg="eax", target_reg=None, init_null=True, bad_bytes=None)` emits x86 instructions for a null-terminated stack string.
-* `push_dword(chunk, clean_reg, bad_bytes)` accepts either little-endian `bytes` or an unsigned 32-bit integer. It emits a direct push when possible and otherwise uses a bad-byte-free encoding.
-* `NegativeAdd(target, bad_bytes=None, max_count=16)` finds addends that construct a dword without forbidden immediate bytes. Use `.instructions(register)` for an instruction list or `.asm(register)` for newline-separated assembly.
+* `push_string` emits x86 instructions for a null-terminated stack string.
+* `push_dword` accepts either little-endian `bytes` or an unsigned 32-bit integer. It emits a direct push when possible and otherwise uses a bad-byte-free encoding.
+* `NegativeAdd` finds addends that construct a dword without forbidden immediate bytes. Use `.instructions(register)` for an instruction list or `.asm(register)` for newline-separated assembly.
+
+#### Stack-push command-line helpers
+
+Run these commands from the repository root to emit copy-ready x86 assembly.
+Bad characters use strict `\xNN` notation and default to `\x00` when `-b`
+is omitted for `push_string.py`. For `push_string.py` and `push_string.py`,
+make sure to include `-b`:
+
+```bash
+python3 push_string.py "kernel32.dll" -b "\x00\x0a\x0d\x25\x26\x2b\x3d"
+python3 push_dword.py 0x41424344 -r ecx -b "\x41"
+python3 negative_add.py 0x41414141 -r ecx -b "\x00\x41\xbe\xbf" --max-count 4
+```
+
+`push_string.py` also accepts `-t REG` to leave the stack-string pointer in a
+register and `--no-null` to suppress its aligned-string null dword.
 
 `ShellcodeHelper.push_function_hash(name, clean_reg="eax")` and
 `ShellcodeHelper.find_function(name, clean_reg="eax")` support selecting the
